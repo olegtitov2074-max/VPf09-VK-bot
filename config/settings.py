@@ -15,10 +15,11 @@ class Settings(BaseSettings):
     VK_TOKEN: str
     GROUP_ID: int
 
-    # OpenAI-совместимый API через ProxyAPI
-    AI_API_KEY: str
-    AI_MODEL: str = "gpt-4.1-mini"
-    AI_BASE_URL: str = "https://api.proxyapi.ru/openai/v1"
+    # Gemini через ProxyAPI
+    GEMINI_API_KEY: str
+    GEMINI_MODEL: str = "gemini-3.5-flash-lite"
+    GEMINI_BASE_URL: str = "https://api.proxyapi.ru/google"
+    API_VERSION: str = "v1beta"
 
     # Настройки памяти
     DEFAULT_ROLE: str = "assistant"
