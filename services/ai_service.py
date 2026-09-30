@@ -1,12 +1,14 @@
-"""Централизованный AIService: работа с LLM через Google GenAI SDK и ProxyAPI.
+"""Централизованный AIService: работа с LLM через OpenAI-совместимый ProxyAPI.
 
-- Легко заменить модель (поле settings.GEMINI_MODEL).
+- Легко заменить модель (поле settings.AI_MODEL).
 - Легко добавить новую модель/провайдера: достаточно реализовать
   протокол BaseAIProvider и зарегистрировать его в AIService.
 """
 import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
+
+from openai import AsyncOpenAI
 
 from config import get_settings
 from services.context import build_context
@@ -26,45 +28,44 @@ class BaseAIProvider(ABC):
         raise NotImplementedError
 
 
-class GeminiProvider(BaseAIProvider):
-    """Провайдер Gemini через ProxyAPI.ru (совместим с Google GenAI SDK)."""
+class OpenAIProvider(BaseAIProvider):
+    """Провайдер OpenAI-совместимого API через ProxyAPI.ru."""
 
     def __init__(self) -> None:
-        from google import genai  # импорт только при реальном использовании
-
         settings = get_settings()
-        self._client = genai.Client(
-            api_key=settings.GEMINI_API_KEY,
-            http_options={
-                "api_version": settings.API_VERSION,
-                "base_url": settings.GEMINI_BASE_URL,
-                "timeout": 60_000,  # миллисекунды, чтобы не зависать надолго
-                # ProxyAPI ожидает Authorization: Bearer, а SDK по умолчанию
-                # шлёт ключ в x-goog-api-key. Добавляем оба заголовка.
-                "headers": {
-                    "Authorization": f"Bearer {settings.GEMINI_API_KEY}",
-                },
-            },
+        self._client = AsyncOpenAI(
+            api_key=settings.AI_API_KEY,
+            base_url=settings.AI_BASE_URL,
+            timeout=60.0,  # секунды, чтобы не зависать надолго
         )
-        self._model = settings.GEMINI_MODEL
+        self._model = settings.AI_MODEL
         logger.info("AI-провайдер инициализирован: модель %s, base_url=%s",
-                    self._model, settings.GEMINI_BASE_URL)
+                    self._model, settings.AI_BASE_URL)
+
+    @staticmethod
+    def _to_messages(context: dict[str, Any]) -> list[dict[str, str]]:
+        """Переводит контекст build_context() в формат OpenAI chat completions."""
+        messages: list[dict[str, str]] = []
+        system_instruction = context.get("system_instruction")
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
+        for item in context.get("contents", []):
+            role = "assistant" if item.get("role") == "model" else "user"
+            parts = item.get("parts") or []
+            text = parts[0].get("text", "") if parts else ""
+            messages.append({"role": role, "content": text})
+        return messages
 
     async def generate(self, context: dict[str, Any]) -> str:
-        """Генерация контента Gemini (асинхронно)."""
-        from google.genai import types
-
-        config = types.GenerateContentConfig(
-            system_instruction=context["system_instruction"],
-        )
-        response = await self._client.aio.models.generate_content(
+        """Генерация ответа моделью (асинхронно)."""
+        context_messages = self._to_messages(context)
+        response = await self._client.chat.completions.create(
             model=self._model,
-            contents=context["contents"],
-            config=config,
+            messages=context_messages,
         )
-        if not response.candidates:
-            raise RuntimeError("Модель вернула пустой ответ (нет candidates)")
-        return response.text or ""
+        if not response.choices:
+            raise RuntimeError("Модель вернула пустой ответ (нет choices)")
+        return response.choices[0].message.content or ""
 
 
 class AIService:
@@ -75,7 +76,7 @@ class AIService:
 
     def __init__(self, provider: BaseAIProvider | None = None) -> None:
         self.settings = get_settings()
-        self._provider = provider or GeminiProvider()
+        self._provider = provider or OpenAIProvider()
 
     def set_provider(self, provider: BaseAIProvider) -> None:
         """Позволяет подменить провайдера в рантайме (для будущих моделей)."""
@@ -84,7 +85,7 @@ class AIService:
 
     @property
     def model(self) -> str:
-        return self.settings.GEMINI_MODEL
+        return self.settings.AI_MODEL
 
     async def generate_reply(
         self,

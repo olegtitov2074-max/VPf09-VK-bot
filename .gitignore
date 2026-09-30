@@ -1,10 +1,37 @@
+# Secrets
 .env
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-data/
+.env.*
+!.env.example
+
+# Python environments
 .venv/
 venv/
-.env.local
+
+# Python cache and build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Runtime data and user dialogue history
+data/
+data_test/
 .vkbottle/
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
